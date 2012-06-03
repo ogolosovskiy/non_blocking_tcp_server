@@ -1,0 +1,54 @@
+Illustrate for http://www.trapexit.org/Building_a_Non-blocking_TCP_server_using_OTP_principles
+
+Compiling
+Create the following directory structure for this application:
+
+ ./tcp_server
+ ./tcp_server/ebin/
+ ./tcp_server/ebin/tcp_server.app
+ ./tcp_server/src/tcp_server_app.erl
+ ./tcp_server/src/tcp_listener.erl
+ ./tcp_server/src/tcp_echo_fsm.erl
+ $ cd tcp_server/src
+ $ for f in tcp*.erl ; do erlc +debug_info -o ../ebin $f
+Running
+We are going to start an Erlang shell with SASL support so that we can view all progress and error reports for our TCP application. Also we are going to start appmon application in order to examine visually the supervision hierarchy.
+
+ $ cd ../ebin
+ $ erl -boot start_sasl
+ ...
+ 1> appmon:start().
+ {ok,<0.44.0>}
+ 2> application:start(tcp_server).
+ ok
+Now click on the tcp_server button in the appmon's window in order to display supervision hierarchy of the tcp_server application.
+
+ 3> {ok,S} = gen_tcp:connect({127,0,0,1},2222,[{packet,2}]).
+ {ok,#Port<0.150>}
+The step above initiated a new client connection to the echo server.
+
+ 4> gen_tcp:send(S,<<"hello">>).
+ ok
+ 5> f(M), receive M -> M end.
+ {tcp,#Port<0.150>,"hello"}
+We verified that the echo server works as expected. Now let's try to crash the client connection on the server and watch for the supervisor generating an error report entry on screen.
+
+ 6> [{_,Pid,_,_}] = supervisor:which_children(tcp_client_sup).
+ [{undefined,<0.64.0>,worker,[]}]
+ 7> exit(Pid,kill).
+ true
+ =SUPERVISOR REPORT==== 31-Jul-2007::14:33:49 ===
+      Supervisor: {local,tcp_client_sup}
+      Context:    child_terminated
+      Reason:     killed
+      Offender:   [{pid,<0.77.0>},
+                   {name,undefined},
+                   {mfa,{tcp_echo_fsm,start_link,[]}},
+                   {restart_type,temporary},
+                   {shutdown,2000},
+                   {child_type,worker}]
+Note that if you are putting this server under a stress test with many incoming connections, the listener process may fail to accept new connections after the number of open file descriptors reaches the limit set by the operating system. In that case you will see the error:
+
+  "too many open files"
+If you are running Linux/UNIX, google for a solution (which ultimately boils down to increasing the per-process limit by setting "ulimit -n ..." option).
+
